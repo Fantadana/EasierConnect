@@ -77,13 +77,13 @@ jobs:
       - name: Checkout codebase
         uses: actions/checkout@v4
 
-      - name: Show workflow information
-        id: get_filename
+      - name: Set asset name for later steps
+        shell: pwsh
         run: |
-          export _NAME=$GOOS-$GOARCH$GOARM
-          echo "GOOS: $GOOS, GOARCH: $GOARCH, GOARM: $GOARM, RELEASE_NAME: $_NAME"
-          echo "::set-output name=ASSET_NAME::$_NAME"
-          echo "ASSET_NAME=$_NAME" >> $GITHUB_ENV
+          $ASSET_NAME = "${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}"
+          echo "ASSET_NAME=$ASSET_NAME" | Add-Content -Path $env:GITHUB_ENV
+          echo "Asset Name: $ASSET_NAME"
+
       - name: Set up Go
         uses: actions/setup-go@v3
         with:
@@ -93,24 +93,34 @@ jobs:
         run: go mod download
 
       - name: Build
+        shell: pwsh
         run: |
           mkdir -p build_assets
           go build -v -o build_assets/EasierConnect -trimpath -ldflags "-s -w -buildid=" .
-      - name: Rename Windows EasierConnect
+
+      - name: Rename Windows Executable
         if: matrix.goos == 'windows'
+        shell: pwsh
         run: |
-          cd ./build_assets || exit 1
-          mv EasierConnect EasierConnect.exe
+          Move-Item -Path ./build_assets/EasierConnect -Destination ./build_assets/EasierConnect.exe
+
       - name: Create ZIP archive
+        shell: pwsh
         run: |
-          pushd build_assets || exit 1
-          zip -9vr ../EasierConnect-$ASSET_NAME.zip .
-          popd || exit 1
+          Compress-Archive -Path ./build_assets/* -DestinationPath ./EasierConnect-${{ env.ASSET_NAME }}.zip -Force
       
-      - name: Upload release binary
+      - name: Upload artifact for all runs
+        uses: actions/upload-artifact@v4
+        with:
+          # The name of the artifact that will be displayed on the GitHub UI
+          name: EasierConnect-${{ env.ASSET_NAME }}
+          # The path to the file(s) to upload
+          path: ./EasierConnect-${{ env.ASSET_NAME }}.zip
+
+      - name: Upload binary to Release
         if: github.event_name == 'release'
         env:
           GITHUB_TOKEN: ${{ github.token }}
+        shell: pwsh
         run: |
-          gh release upload ${{ github.event.release.tag_name }} EasierConnect-${{ steps.get_filename.outputs.ASSET_NAME }}.zip
-
+          gh release upload ${{ github.event.release.tag_name }} ./EasierConnect-${{ env.ASSET_NAME }}.zip
