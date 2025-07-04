@@ -1,4 +1,4 @@
-name: Build Windows Executable
+name: Release
 
 on:
   release:
@@ -15,60 +15,107 @@ on:
 permissions: write-all
 
 jobs:
-  build-windows:
-    name: Build for Windows
-    # 固定在 Windows 环境运行
-    runs-on: windows-latest
-
+  build:
     strategy:
       matrix:
-        # 只定义需要构建的 Windows 架构
-        goarch: [amd64, 386, arm64]
+        # Define os runner mapping
+        include:
+          - goos: windows
+            goarch: amd64
+            os: windows-latest
+          - goos: windows
+            goarch: "386"
+            os: windows-latest
+          - goos: windows
+            goarch: arm64
+            os: windows-latest
+          - goos: linux
+            goarch: amd64
+            os: ubuntu-latest
+          - goos: linux
+            goarch: "386"
+            os: ubuntu-latest
+          - goos: linux
+            goarch: arm64
+            os: ubuntu-latest
+          - goos: linux
+            goarch: arm
+            goarm: 7
+            os: ubuntu-latest
+          - goos: darwin
+            goarch: amd64
+            os: macos-latest
+          - goos: darwin
+            goarch: arm64
+            os: macos-latest
+          # You can add back other targets like riscv64, mips etc. if needed
+          # They will all use ubuntu-latest by default if not specified
+          - goos: linux
+            goarch: riscv64
+            os: ubuntu-latest
+            
+      fail-fast: false
+
+    # Dynamically set the runner based on the matrix
+    runs-on: ${{ matrix.os }}
 
     env:
-      # 固定目标平台为 Windows
-      GOOS: windows
+      GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
+      GOARM: ${{ matrix.goarm }}
       CGO_ENABLED: 0
 
     steps:
       - name: Checkout codebase
         uses: actions/checkout@v4
 
+      - name: Set asset name for later steps
+        id: set_vars
+        run: |
+          ASSET_NAME="${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}"
+          echo "ASSET_NAME=$ASSET_NAME" >> $GITHUB_ENV
+          echo "Asset Name: $ASSET_NAME"
+          
+          EXE_NAME="EasierConnect"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            EXE_NAME="EasierConnect.exe"
+          fi
+          echo "EXE_NAME=$EXE_NAME" >> $GITHUB_ENV
+          
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ^1.21
+          go-version: ^1.21 # Bumping Go version is also a good practice
 
       - name: Get project dependencies
         run: go mod download
 
-      - name: Build Windows Executable
+      - name: Build
+        run: |
+          mkdir -p build_assets
+          go build -v -o build_assets/${{ env.EXE_NAME }} -trimpath -ldflags "-s -w -buildid=" .
+
+      - name: Create ZIP archive (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          cd build_assets
+          zip -9vr ../EasierConnect-${{ env.ASSET_NAME }}.zip .
+          cd ..
+          
+      - name: Create ZIP archive (Windows)
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # 创建一个目录存放构建产物
-          mkdir build_assets
-          # 直接编译成 .exe 文件
-          go build -v -o build_assets/EasierConnect.exe -trimpath -ldflags "-s -w -buildid=" .
-
-      - name: Create ZIP archive
-        shell: pwsh
-        run: |
-          $ASSET_NAME = "windows-${{ matrix.goarch }}"
-          Compress-Archive -Path ./build_assets/* -DestinationPath ./EasierConnect-${ASSET_NAME}.zip -Force
-          echo "ASSET_PATH=./EasierConnect-${ASSET_NAME}.zip" | Add-Content -Path $env:GITHUB_ENV
-          echo "ASSET_NAME=EasierConnect-${ASSET_NAME}.zip" | Add-Content -Path $env:GITHUB_ENV
-
+          Compress-Archive -Path ./build_assets/* -DestinationPath ./EasierConnect-${{ env.ASSET_NAME }}.zip -Force
+      
       - name: Upload artifact for all runs
         uses: actions/upload-artifact@v4
         with:
-          name: EasierConnect-windows-${{ matrix.goarch }}
-          path: ${{ env.ASSET_PATH }}
+          name: EasierConnect-${{ env.ASSET_NAME }}
+          path: ./EasierConnect-${{ env.ASSET_NAME }}.zip
 
       - name: Upload binary to Release
         if: github.event_name == 'release'
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        shell: pwsh
-        run: |
-          gh release upload ${{ github.event.release.tag_name }} ${{ env.ASSET_PATH }}
+        run: gh release upload ${{ github.event.release.tag_name }} ./EasierConnect-${{ env.ASSET_NAME }}.zip
