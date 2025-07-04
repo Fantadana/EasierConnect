@@ -1,0 +1,40 @@
+name: Go3
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest # 仍然使用 Windows Runner
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.20'
+
+    - name: Build for Linux AMD64 # 明确指出是为 Linux 编译
+      run: |
+        # 设置环境变量，GOOS=linux 表示目标操作系统是 Linux
+        # GOARCH=amd64 表示目标架构是 AMD64
+        # 将可执行文件输出到 build_assets 目录
+        $env:GOOS='linux'
+        $env:GOARCH='amd64'
+        go build -v -o build_assets/EasierConnect_linux_amd64.exe ./...
+      shell: pwsh # 使用 PowerShell，因为是在 Windows 环境下设置环境变量
+
+    - name: Build for Windows AMD64 # 如果也需要 Windows 版本，可以再加一步
+      run: |
+        go build -v -o build_assets/EasierConnect_windows_amd64.exe ./...
+      shell: pwsh
+
+    # 你可能还需要一个步骤来上传这些构建好的二进制文件
+    - name: Upload Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: built-binaries
+        path: build_assets/
