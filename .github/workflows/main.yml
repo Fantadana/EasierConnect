@@ -81,11 +81,12 @@ jobs:
         shell: pwsh
         run: |
           $ASSET_NAME = "${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.goarm }}"
-          echo "ASSET_NAME=$ASSET_NAME" | Add-Content -Path $env:GITHUB_ENV
-          echo "Asset Name: $ASSET_NAME"
+          "ASSET_NAME=$ASSET_NAME" | Add-Content -Path $env:GITHUB_ENV
+          Write-Host "Asset Name: $ASSET_NAME"
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        # Updated to v5 for best practice
+        uses: actions/setup-go@v5
         with:
           go-version: ^1.19
 
@@ -110,6 +111,7 @@ jobs:
           Compress-Archive -Path ./build_assets/* -DestinationPath ./EasierConnect-${{ env.ASSET_NAME }}.zip -Force
       
       - name: Upload artifact for all runs
+        # FIXED: Updated from v3 to v4
         uses: actions/upload-artifact@v4
         with:
           # The name of the artifact that will be displayed on the GitHub UI
